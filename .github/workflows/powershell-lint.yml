@@ -1,0 +1,42 @@
+name: powershell-lint
+
+on:
+    workflow_call:
+        inputs:
+            path:
+                description: Folder with the PowerShell scripts to analyze
+                type: string
+                required: true
+            settings:
+                description: Path to the PSScriptAnalyzer settings file
+                type: string
+                default: ./PSScriptAnalyzerSettings.psd1
+            analyzer-version:
+                description: PSScriptAnalyzer version to install
+                type: string
+                default: 1.23.0
+
+permissions:
+    contents: read
+
+jobs:
+    analyze:
+        runs-on: ubuntu-24.04
+        steps:
+            - name: Check out the calling repository
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+            - name: Install PSScriptAnalyzer
+              shell: pwsh
+              env:
+                  ANALYZER_VERSION: ${{ inputs.analyzer-version }}
+              run: |
+                  Set-PSRepository PSGallery -InstallationPolicy Trusted
+                  Install-Module PSScriptAnalyzer -RequiredVersion $env:ANALYZER_VERSION -Scope CurrentUser
+
+            - name: Analyze the PowerShell scripts
+              shell: pwsh
+              env:
+                  SCRIPTS_PATH: ${{ inputs.path }}
+                  SETTINGS_PATH: ${{ inputs.settings }}
+              run: Invoke-ScriptAnalyzer -Path $env:SCRIPTS_PATH -Recurse -Settings $env:SETTINGS_PATH -EnableExit

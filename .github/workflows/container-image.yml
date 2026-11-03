@@ -1,0 +1,55 @@
+name: container-image
+
+on:
+    workflow_call:
+
+# The caller grants these: a reusable workflow can only keep or reduce them.
+permissions:
+    contents: read
+    packages: write
+
+jobs:
+    publish:
+        runs-on: ubuntu-24.04
+        steps:
+            - name: Check out the calling repository
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  persist-credentials: false
+
+            - name: Compute the image name and tag
+              id: image
+              run: |
+                  echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+                  echo "tag=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
+
+            - name: Log in to GHCR
+              env:
+                  REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: echo "$REGISTRY_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+
+            - name: Check whether the image already exists
+              id: existing
+              env:
+                  IMAGE: ${{ steps.image.outputs.name }}:${{ steps.image.outputs.tag }}
+              run: |
+                  if docker manifest inspect "$IMAGE" > /dev/null 2>&1; then
+                      echo "exists=true" >> "$GITHUB_OUTPUT"
+                      echo "$IMAGE already exists: nothing to build." >> "$GITHUB_STEP_SUMMARY"
+                  else
+                      echo "exists=false" >> "$GITHUB_OUTPUT"
+                  fi
+
+            - name: Build and push the image
+              if: steps.existing.outputs.exists == 'false'
+              env:
+                  IMAGE: ${{ steps.image.outputs.name }}:${{ steps.image.outputs.tag }}
+                  SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}
+              run: |
+                  docker build --label "org.opencontainers.image.source=$SOURCE_URL" --tag "$IMAGE" .
+                  docker push "$IMAGE"
+                  echo "Published $IMAGE" >> "$GITHUB_STEP_SUMMARY"
+
+            - name: Log out of GHCR
+              if: always()
+              run: docker logout ghcr.io

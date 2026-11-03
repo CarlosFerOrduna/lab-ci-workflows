@@ -4,17 +4,43 @@ Reusable GitHub Actions workflows (`on: workflow_call`) shared by every lab repo
 
 ## Status
 
-Today: only this README.
+Callers pin the major version tag: `uses: CarlosFerOrduna/lab-ci-workflows/.github/workflows/<workflow>.yml@v1`. Third-party actions inside the workflows are pinned by commit SHA.
 
-Planned:
+| Workflow              | Used by                                       | What it does                                                                                                                                                                                        |
+| --------------------- | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `powershell-lint.yml` | lab-infra                                     | Runs PSScriptAnalyzer on a folder of PowerShell scripts. Inputs: `path`, `settings`, `analyzer-version`.                                                                                            |
+| `container-image.yml` | lab-processor, lab-producer-a, lab-producer-b | Builds the caller's `Dockerfile` and pushes `ghcr.io/<owner>/<repo>:<tree hash>` with the caller's `GITHUB_TOKEN`. Skips the build if that tag exists. Labels the image with its source repository. |
 
-- PowerShell linting with PSScriptAnalyzer, for the scripts in lab-infra.
-- The service pipeline, for lab-processor, lab-producer-a and lab-producer-b:
-  - Run the npm scripts (`lint`, `test`) so CI and local work use the same commands.
-  - Build the image with BuildKit and push it to the lab registry.
-  - Tag the image with the tree hash (`git rev-parse HEAD^{tree}`).
-  - On `stage` and `main`, reuse the image built for `development`. Fail if it does not exist and never rebuild.
-  - Update the image tag in the matching lab-gitops overlay.
+### container-image.yml
+
+The caller decides when it runs and grants the permissions; a reusable workflow can only keep or reduce them:
+
+```yaml
+on:
+  push:
+    branches: [development]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  image:
+    uses: CarlosFerOrduna/lab-ci-workflows/.github/workflows/container-image.yml@v1
+```
+
+- The tag is the tree hash (`git rev-parse HEAD^{tree}`): it identifies the content, not the commit, so the same files always map to the same image.
+- Inside the reusable workflow, `github.repository` and `GITHUB_TOKEN` belong to the caller: each service publishes its own package, never another one's.
+- Values reach the shell through `env`, never as `${{ }}` inside `run`, so no expression can inject commands.
+- No personal token publishes images.
+
+Planned for the service pipeline:
+
+- Run the npm scripts (`lint`, `test`) before publishing, so CI and local work use the same commands.
+- Build with BuildKit.
+- On `stage` and `main`, reuse the image built for `development`. Fail if it does not exist and never rebuild.
+- Update the image tag in the matching lab-gitops overlay.
 
 ## Lab repositories
 
